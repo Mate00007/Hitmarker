@@ -4,14 +4,13 @@
     - Gravity: 227
     - No UI, no controls, just the marker.
     - Marker is always visible at the arc's end point.
-    - Press P to self-destruct and remove the marker.
+    - Use UltraMarker.ToggleOn() and UltraMarker.ToggleOff() to enable/disable the marker.
     - Shows "Throw!" in green above the marker if the marker is at someone's head.
 --]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
-local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
@@ -72,7 +71,8 @@ textLabel.Parent = billboard
 marker.Transparency = 1
 selectionBox.Visible = false
 
-local destroyed = false
+local enabled = false
+local conn1 = nil
 
 -- === Raycast Helper ===
 local function getMouseRay()
@@ -125,7 +125,12 @@ end
 
 -- === Marker Update ===
 local function updateMarker()
-    if destroyed then return end
+    if not enabled then
+        marker.Transparency = 1
+        selectionBox.Visible = false
+        textLabel.Visible = false
+        return
+    end
 
     local origin, direction = getMouseRay()
     local ignoreList = {LocalPlayer.Character, marker}
@@ -153,15 +158,35 @@ local function updateMarker()
     end
 end
 
-local conn1 = RunService.RenderStepped:Connect(updateMarker)
+-- Toggle API
+local UltraMarker = {}
 
--- Self-destruct on P
-local conn2 = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if destroyed then return end
-    if not gameProcessed and input.KeyCode == Enum.KeyCode.P then
-        destroyed = true
-        pcall(function() marker:Destroy() end)
-        pcall(function() conn1:Disconnect() end)
-        pcall(function() conn2:Disconnect() end)
+function UltraMarker.ToggleOn()
+    if enabled then return end
+    enabled = true
+    if not conn1 then
+        conn1 = RunService.RenderStepped:Connect(updateMarker)
     end
-end)
+    marker.Parent = Workspace
+    updateMarker()
+end
+
+function UltraMarker.ToggleOff()
+    if not enabled then return end
+    enabled = false
+    if conn1 then
+        conn1:Disconnect()
+        conn1 = nil
+    end
+    marker.Transparency = 1
+    selectionBox.Visible = false
+    textLabel.Visible = false
+    marker.Parent = Workspace -- keep in workspace but invisible
+end
+
+-- Auto-enable on load
+UltraMarker.ToggleOn()
+
+-- Expose API globally for library usage
+getgenv = getgenv or function() return _G end
+getgenv().UltraMarker = UltraMarker
