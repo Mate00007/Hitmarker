@@ -1,0 +1,167 @@
+--[[
+    Simple Ultra Marker: Always shows the end point of a projectile arc from your mouse, using fixed throw speed and gravity.
+    - Throw speed: 153
+    - Gravity: 227
+    - No UI, no controls, just the marker.
+    - Marker is always visible at the arc's end point.
+    - Press P to self-destruct and remove the marker.
+    - Shows "Throw!" in green above the marker if the marker is at someone's head.
+--]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+
+-- === CONSTANTS ===
+local THROW_SPEED = 153
+local GRAVITY = 227
+
+local MARKER_COLOR = Color3.fromRGB(255, 0, 0)
+local MARKER_SIZE = Vector3.new(0.25, 0.25, 0.25) -- smaller box
+local MARKER_TRANSPARENCY = 1
+local OUTLINE_COLOR = Color3.fromRGB(255, 255, 255)
+local OUTLINE_THICKNESS = 0.13 -- slightly thinner outline
+
+-- === Marker Setup ===
+local marker = Instance.new("Part")
+marker.Anchored = true
+marker.CanCollide = false
+marker.Size = MARKER_SIZE
+marker.Shape = Enum.PartType.Ball
+marker.Color = MARKER_COLOR
+marker.Transparency = MARKER_TRANSPARENCY
+marker.Material = Enum.Material.Neon
+marker.Name = "UltraVisibleMarker"
+marker.TopSurface = Enum.SurfaceType.Smooth
+marker.BottomSurface = Enum.SurfaceType.Smooth
+marker.CastShadow = false
+marker.Parent = Workspace
+
+local selectionBox = Instance.new("SelectionBox")
+selectionBox.Adornee = marker
+selectionBox.LineThickness = OUTLINE_THICKNESS
+selectionBox.Color3 = OUTLINE_COLOR
+selectionBox.SurfaceTransparency = 0
+selectionBox.Parent = marker
+
+-- BillboardGui for "Throw!" text
+local billboard = Instance.new("BillboardGui")
+billboard.Name = "ThrowTextBillboard"
+billboard.Adornee = marker
+billboard.Size = UDim2.new(0, 100, 0, 30)
+billboard.StudsOffset = Vector3.new(0, 1.2, 0)
+billboard.AlwaysOnTop = true
+billboard.Parent = marker
+
+local textLabel = Instance.new("TextLabel")
+textLabel.Size = UDim2.new(1, 0, 1, 0)
+textLabel.BackgroundTransparency = 1
+textLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+textLabel.TextStrokeTransparency = 0.2
+textLabel.TextStrokeColor3 = Color3.fromRGB(0,0,0)
+textLabel.Font = Enum.Font.SourceSansBold
+textLabel.TextScaled = true
+textLabel.Text = "Throw!"
+textLabel.Visible = false
+textLabel.Parent = billboard
+
+marker.Transparency = 1
+selectionBox.Visible = false
+
+local destroyed = false
+
+-- === Raycast Helper ===
+local function getMouseRay()
+    local mouse = LocalPlayer:GetMouse()
+    local unitRay = Camera:ScreenPointToRay(mouse.X, mouse.Y)
+    return unitRay.Origin, unitRay.Direction
+end
+
+-- === Arc End Point Calculation ===
+local function getArcEndPoint(origin, direction, speed, gravityValue, ignoreList)
+    local dt = 1/240
+    local t = 0
+    local maxT = 5
+    local pos = origin
+    local vel = direction * speed
+    local rayParams = RaycastParams.new()
+    rayParams.FilterDescendantsInstances = ignoreList or {}
+    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+    rayParams.IgnoreWater = true
+
+    while t < maxT do
+        local nextVel = vel + Vector3.new(0, -gravityValue * dt, 0)
+        local nextPos = pos + vel * dt + Vector3.new(0, -0.5 * gravityValue * dt * dt, 0)
+        local result = Workspace:Raycast(pos, nextPos - pos, rayParams)
+        if result and result.Instance then
+            return result.Position, true
+        end
+        pos = nextPos
+        vel = nextVel
+        t = t + dt
+    end
+    return pos, false
+end
+
+-- Helper: Check if marker is at any player's head (except local player)
+local function isAtAnyPlayerHead(markerPos)
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+            local head = player.Character.Head
+            -- Use a small threshold for "at head"
+            local dist = (markerPos - head.Position).Magnitude
+            local threshold = (head.Size.Magnitude/2) + 0.2 -- a bit of leeway
+            if dist <= threshold then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- === Marker Update ===
+local function updateMarker()
+    if destroyed then return end
+
+    local origin, direction = getMouseRay()
+    local ignoreList = {LocalPlayer.Character, marker}
+    local endPoint, hit = getArcEndPoint(origin, direction.Unit, THROW_SPEED, GRAVITY, ignoreList)
+
+    if hit then
+        marker.Position = endPoint
+        marker.Transparency = 1
+        selectionBox.Visible = true
+        marker.Size = MARKER_SIZE
+        selectionBox.LineThickness = OUTLINE_THICKNESS
+        marker.Color = MARKER_COLOR
+        marker.Parent = Workspace
+
+        -- Check if marker is at any player's head
+        if isAtAnyPlayerHead(endPoint) then
+            textLabel.Visible = true
+        else
+            textLabel.Visible = false
+        end
+    else
+        marker.Transparency = 1
+        selectionBox.Visible = false
+        textLabel.Visible = false
+    end
+end
+
+local conn1 = RunService.RenderStepped:Connect(updateMarker)
+
+-- Self-destruct on P
+local conn2 = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if destroyed then return end
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.P then
+        destroyed = true
+        pcall(function() marker:Destroy() end)
+        pcall(function() conn1:Disconnect() end)
+        pcall(function() conn2:Disconnect() end)
+    end
+end)
