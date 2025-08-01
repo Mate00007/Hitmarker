@@ -172,16 +172,29 @@ function UltraMarker.ToggleOn()
 end
 
 function UltraMarker.ToggleOff()
-    if not enabled then return end
+    -- Completely remove all marker objects and disconnect everything
     enabled = false
     if conn1 then
         conn1:Disconnect()
         conn1 = nil
     end
-    marker.Transparency = 1
-    selectionBox.Visible = false
-    textLabel.Visible = false
-    marker.Parent = Workspace -- keep in workspace but invisible
+    -- Destroy only the objects we created and are responsible for
+    if textLabel and textLabel.Parent then
+        textLabel:Destroy()
+    end
+    if billboard and billboard.Parent then
+        billboard:Destroy()
+    end
+    if selectionBox and selectionBox.Parent then
+        selectionBox:Destroy()
+    end
+    if marker and marker.Parent then
+        marker:Destroy()
+    end
+    -- Remove global reference
+    if getgenv and getgenv().UltraMarker then
+        getgenv().UltraMarker = nil
+    end
 end
 
 -- Auto-enable on load
